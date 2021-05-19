@@ -5,20 +5,10 @@ appPackage = JSON.parse(File.read(File.join('..', 'app', 'package.json')))
 # Firebase SDK Override
 coreVersionDetected = appPackage['version']
 coreVersionRequired = package['peerDependencies'][appPackage['name']]
-if appPackage['sdkVersions']
-  firebase_sdk_version = appPackage['sdkVersions']['ios']['firebase']
-else
-  firebase_sdk_version = '~> 6.25.0'
-end
+firebase_sdk_version = appPackage['sdkVersions']['ios']['firebase']
 if coreVersionDetected != coreVersionRequired
   Pod::UI.warn "NPM package '#{package['name']}' depends on '#{appPackage['name']}' v#{coreVersionRequired} but found v#{coreVersionDetected}, this might cause build issues or runtime crashes."
 end
-
-# Fabric SDK Override
-fabric_sdk_version = '~> 1.10.2'
-
-# Crashlytics SDK Override
-crashlytics_sdk_version = '~> 3.14.0'
 
 Pod::Spec.new do |s|
   s.name                = "RNFBCrashlytics"
@@ -32,11 +22,12 @@ Pod::Spec.new do |s|
   s.authors             = "Invertase Limited"
   s.source              = { :git => "https://github.com/invertase/react-native-firebase.git", :tag => "v#{s.version}" }
   s.social_media_url    = 'http://twitter.com/invertaseio'
-  s.ios.deployment_target = "9.0"
+  s.ios.deployment_target = "10.0"
+  s.tvos.deployment_target = "10.0"
   s.source_files        = 'ios/**/*.{h,m}'
 
   # React Native dependencies
-  s.dependency          'React'
+  s.dependency          'React-Core'
   s.dependency          'RNFBApp'
 
   if defined?($FirebaseSDKVersion)
@@ -44,19 +35,8 @@ Pod::Spec.new do |s|
     firebase_sdk_version = $FirebaseSDKVersion
   end
 
-  if defined?($CrashlyticsSDKVersion)
-    Pod::UI.puts "#{s.name}: Using user specified Crashlytics SDK version '#{$CrashlyticsSDKVersion}'"
-    crashlytics_sdk_version = $CrashlyticsSDKVersion
-  end
-
-  if defined?($FabricSDKVersion)
-    Pod::UI.puts "#{s.name}: Using user specified Fabric SDK version '#{$FabricSDKVersion}'"
-    fabric_sdk_version = $FabricSDKVersion
-  end
-
   # Firebase dependencies
-  s.dependency          'Fabric', fabric_sdk_version
-  s.dependency          'Crashlytics', crashlytics_sdk_version
+  s.dependency          'Firebase/Crashlytics', firebase_sdk_version
 
   if defined?($RNFirebaseAsStaticFramework)
     Pod::UI.puts "#{s.name}: Using overridden static_framework value of '#{$RNFirebaseAsStaticFramework}'"

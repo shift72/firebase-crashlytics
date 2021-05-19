@@ -78,9 +78,56 @@ export namespace FirebaseCrashlyticsTypes {
      *
      */
     isCrashlyticsCollectionEnabled: true;
+    /**
+     * Determines whether there are any unsent crash reports cached on the device. The callback only executes
+     * if automatic data collection is disabled.
+     *
+     * #### Example
+     *
+     * ```js
+     * async checkReports() {
+     * // returns boolean value
+     *  const unsentReports = await firebase.crashlytics().checkForUnsentReports();
+     * }
+     *
+     * checkReports();
+     * ```
+     *
+     */
+    checkForUnsentReports(): Promise<boolean>;
+    /**
+     * Deletes any unsent reports on the device. This method only applies if automatic data collection is
+     * disabled.
+     *
+     * #### Example
+     *
+     * ```js
+     * firebase.crashlytics().deleteUnsentReports();
+     * ```
+     *
+     */
+    deleteUnsentReports(): Promise<void>;
+    /**
+     * Returns a boolean value indicating whether the app crashed during the previous execution.
+     *
+     * #### Example
+     *
+     * ```js
+     * async didCrashPreviously() {
+     * // returns boolean value
+     * const didCrash = await firebase.crashlytics().didCrashOnPreviousExecution();
+     * }
+     *
+     * didCrashPreviously();
+     * ```
+     *
+     */
+    didCrashOnPreviousExecution(): Promise<boolean>;
 
     /**
      * Cause your app to crash for testing purposes. This is a native crash and will not contain a javascript stack trace.
+     * Note that crashes are intercepted by debuggers on iOS so no report will be seen under those conditions. Additionally
+     * if it is a debug build you will need to ensure your firebase.json is configured to enable crashlytics even in debug mode.
      *
      * #### Example
      *
@@ -121,8 +168,20 @@ export namespace FirebaseCrashlyticsTypes {
      * ```
      *
      * @param error Expects an instance of Error; e.g. classes that extend Error will also be supported.
+     * @param jsErrorName Optional string containing Javascript error name
      */
-    recordError(error: Error): void;
+    recordError(error: Error, jsErrorName?: string): void;
+    /**
+     * Enqueues any unsent reports on the device to upload to Crashlytics. This method only applies if
+     * automatic data collection is disabled.
+     *
+     * #### Example
+     *
+     * ```js
+     * firebase.crashlytics().sendUnsentReports();
+     * ```
+     */
+    sendUnsentReports(): void;
 
     /**
      * Specify a user identifier which will be visible in the Firebase Crashlytics console.
@@ -144,36 +203,6 @@ export namespace FirebaseCrashlyticsTypes {
      * @param userId An arbitrary string that ties an end-user to a record in your system e.g. a database record id.
      */
     setUserId(userId: string): Promise<null>;
-
-    /**
-     * Optionally specify a user name which will be visible in the Firebase Crashlytics console.
-     *
-     * If you choose to collect contact information it is strongly recommend that you disclose this in your apps privacy policy.
-     *
-     * #### Example
-     *
-     * ```js
-     * await firebase.crashlytics().setUserName('Alias');
-     * ```
-     *
-     * @param userName A string representing an end-user's name or app username
-     */
-    setUserName(userName: string): Promise<null>;
-
-    /**
-     * Optionally specify a user email which will be visible in the Firebase Crashlytics console.
-     *
-     * If you choose to collect contact information it is strongly recommend that you disclose this in your apps privacy policy.
-     *
-     * #### Example
-     *
-     * ```js
-     * firebase.crashlytics().setUserEmail('user@gmail.com');
-     * ```
-     *
-     * @param userEmail A users email address.
-     */
-    setUserEmail(userEmail: string): Promise<null>;
 
     /**
      * Sets a string value to be associated with the given attribute name which will be visible in the Firebase Crashlytics console.
@@ -223,26 +252,25 @@ export namespace FirebaseCrashlyticsTypes {
   }
 }
 
-declare module '@react-native-firebase/crashlytics' {
-  // tslint:disable-next-line:no-duplicate-imports required otherwise doesn't work
-  import { ReactNativeFirebase } from '@react-native-firebase/app';
-  import ReactNativeFirebaseModule = ReactNativeFirebase.Module;
-  import FirebaseModuleWithStatics = ReactNativeFirebase.FirebaseModuleWithStatics;
+declare const defaultExport: ReactNativeFirebase.FirebaseModuleWithStatics<
+  FirebaseCrashlyticsTypes.Module,
+  FirebaseCrashlyticsTypes.Statics
+>;
 
-  const firebaseNamedExport: {} & ReactNativeFirebaseModule;
-  export const firebase = firebaseNamedExport;
+export const firebase: ReactNativeFirebase.Module & {
+  crashlytics: typeof defaultExport;
+  app(
+    name?: string,
+  ): ReactNativeFirebase.FirebaseApp & { crashlytics(): FirebaseCrashlyticsTypes.Module };
+};
 
-  const defaultExport: FirebaseModuleWithStatics<
-    FirebaseCrashlyticsTypes.Module,
-    FirebaseCrashlyticsTypes.Statics
-  >;
-  export default defaultExport;
-}
+export default defaultExport;
 
 /**
  * Attach namespace to `firebase.` and `FirebaseApp.`.
  */
 declare module '@react-native-firebase/app' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   namespace ReactNativeFirebase {
     import FirebaseModuleWithStatics = ReactNativeFirebase.FirebaseModuleWithStatics;
     interface Module {
@@ -254,13 +282,5 @@ declare module '@react-native-firebase/app' {
     interface FirebaseApp {
       crashlytics(): FirebaseCrashlyticsTypes.Module;
     }
-  }
-}
-
-namespace ReactNativeFirebase {
-  interface FirebaseJsonConfig {
-    crashlytics_ndk_enabled: boolean;
-    crashlytics_debug_enabled: boolean;
-    crashlytics_auto_collection_enabled: boolean;
   }
 }

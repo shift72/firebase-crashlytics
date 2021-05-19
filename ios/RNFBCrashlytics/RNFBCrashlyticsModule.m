@@ -15,14 +15,18 @@
  *
  */
 
+#include <Foundation/Foundation.h>
+#include <sys/sysctl.h>
+
 #import <React/RCTUtils.h>
+#import <React/RCTLog.h>
 
 #import "RNFBCrashlyticsModule.h"
 #import "RNFBCrashlyticsInitProvider.h"
 #import "RCTConvert.h"
 #import "RNFBPreferences.h"
+#import "RNFBApp/RNFBSharedUtils.h"
 #import <Firebase/Firebase.h>
-#import <Crashlytics/Crashlytics.h>
 
 @implementation RNFBCrashlyticsModule
 #pragma mark -
@@ -33,6 +37,11 @@ RCT_EXPORT_MODULE();
 - (NSDictionary *)constantsToExport {
   NSMutableDictionary *constants = [NSMutableDictionary new];
   constants[@"isCrashlyticsCollectionEnabled"] = @([RCTConvert BOOL:@([RNFBCrashlyticsInitProvider isCrashlyticsCollectionEnabled])]);
+  constants[@"isErrorGenerationOnJSCrashEnabled"] = @([RCTConvert BOOL:@([RNFBCrashlyticsInitProvider isErrorGenerationOnJSCrashEnabled])]);
+  constants[@"isCrashlyticsJavascriptExceptionHandlerChainingEnabled"] = @([RCTConvert BOOL:@([RNFBCrashlyticsInitProvider isCrashlyticsJavascriptExceptionHandlerChainingEnabled])]);
+  if ([self isDebuggerAttached]) {
+    RCTLog(@"Crashlytics - WARNING: Debugger detected. Crashlytics will not receive crash reports.");
+  }
   return constants;
 }
 
@@ -43,15 +52,68 @@ RCT_EXPORT_MODULE();
 #pragma mark -
 #pragma mark Firebase Crashlytics Methods
 
+RCT_EXPORT_METHOD(checkForUnsentReports:
+  (RCTPromiseResolveBlock) resolve
+  rejecter:
+  (RCTPromiseRejectBlock) reject) {
+  [[FIRCrashlytics crashlytics] checkForUnsentReportsWithCompletion:^(BOOL unsentReports){
+    resolve([NSNumber numberWithBool:unsentReports]);
+  }];
+}
+
 RCT_EXPORT_METHOD(crash) {
   if ([RNFBCrashlyticsInitProvider isCrashlyticsCollectionEnabled]) {
-    [[Crashlytics sharedInstance] crash];
+    if ([self isDebuggerAttached]) {
+      RCTLog(@"Crashlytics - WARNING: Debugger detected. Crashlytics will not receive crash reports.");
+    }
+
+    // https://firebase.google.com/docs/crashlytics/test-implementation?platform=ios recommends using "@[][1]" to crash,
+    // but that gets caught by react-native and shown as a red box for debug builds. Raise SIGSEGV here to generate a hard crash.
+    int *p = 0;
+    *p = 0;
+  } else {
+      RCTLog(@"Crashlytics - INFO: crashlytics collection is not enabled, not crashing.");
   }
+}
+
+RCT_EXPORT_METHOD(crashWithStackPromise:
+  (NSDictionary *) jsErrorDict
+      resolver:
+      (RCTPromiseResolveBlock) resolve
+      rejecter:
+      (RCTPromiseRejectBlock) reject) {
+  if ([RNFBCrashlyticsInitProvider isCrashlyticsCollectionEnabled]) {
+    if ([self isDebuggerAttached]) {
+      RCTLog(@"Crashlytics - WARNING: Debugger detected. Crashlytics will not receive crash reports.");
+    }
+    [self recordJavaScriptError:jsErrorDict];
+
+    // This is strongly discouraged by Apple as "it will appear as though your app has crashed".
+    // Coincidentally, we are *in* a crash handler and have logged a crash report.
+    // It seems like the one place calling exit cleanly is valid.
+    ELog(@"Crashlytics - Crash logged. Terminating app.");
+    exit(0);
+  } else {
+    RCTLog(@"Crashlytics - INFO: crashlytics collection is not enabled, not crashing.");
+  }
+  resolve([NSNull null]);
+}
+
+RCT_EXPORT_METHOD(deleteUnsentReports) {
+  [[FIRCrashlytics crashlytics] deleteUnsentReports];
+}
+
+RCT_EXPORT_METHOD(didCrashOnPreviousExecution:
+  (RCTPromiseResolveBlock) resolve
+  rejecter:
+  (RCTPromiseRejectBlock) reject) {
+  BOOL didCrash = [[FIRCrashlytics crashlytics] didCrashDuringPreviousExecution];
+  resolve([NSNumber numberWithBool:didCrash]);
 }
 
 RCT_EXPORT_METHOD(log:
   (NSString *) message) {
-  CLS_LOG(@"%@", message);
+  [[FIRCrashlytics crashlytics] log:message];
 }
 
 RCT_EXPORT_METHOD(logPromise:
@@ -60,8 +122,12 @@ RCT_EXPORT_METHOD(logPromise:
       (RCTPromiseResolveBlock) resolve
       rejecter:
       (RCTPromiseRejectBlock) reject) {
-  CLS_LOG(@"%@", message);
+  [[FIRCrashlytics crashlytics] log:message];
   resolve([NSNull null]);
+}
+
+RCT_EXPORT_METHOD(sendUnsentReports) {
+  [[FIRCrashlytics crashlytics] sendUnsentReports];
 }
 
 RCT_EXPORT_METHOD(setAttribute:
@@ -73,7 +139,7 @@ RCT_EXPORT_METHOD(setAttribute:
       rejecter:
       (RCTPromiseRejectBlock) reject) {
   if ([RNFBCrashlyticsInitProvider isCrashlyticsCollectionEnabled]) {
-    [[Crashlytics sharedInstance] setObjectValue:value forKey:key];
+    [[FIRCrashlytics crashlytics] setCustomValue:value forKey:key];
   }
   resolve([NSNull null]);
 }
@@ -88,7 +154,7 @@ RCT_EXPORT_METHOD(setAttributes:
     NSArray *keys = [attributes allKeys];
 
     for (NSString *key in keys) {
-      [[Crashlytics sharedInstance] setObjectValue:attributes[key] forKey:key];
+      [[FIRCrashlytics crashlytics] setCustomValue:attributes[key] forKey:key];
     }
   }
   resolve([NSNull null]);
@@ -101,31 +167,7 @@ RCT_EXPORT_METHOD(setUserId:
       rejecter:
       (RCTPromiseRejectBlock) reject) {
   if ([RNFBCrashlyticsInitProvider isCrashlyticsCollectionEnabled]) {
-    [[Crashlytics sharedInstance] setUserIdentifier:userId];
-  }
-  resolve([NSNull null]);
-}
-
-RCT_EXPORT_METHOD(setUserName:
-  (NSString *) userName
-      resolver:
-      (RCTPromiseResolveBlock) resolve
-      rejecter:
-      (RCTPromiseRejectBlock) reject) {
-  if ([RNFBCrashlyticsInitProvider isCrashlyticsCollectionEnabled]) {
-    [[Crashlytics sharedInstance] setUserName:userName];
-  }
-  resolve([NSNull null]);
-}
-
-RCT_EXPORT_METHOD(setUserEmail:
-  (NSString *) userEmail
-      resolver:
-      (RCTPromiseResolveBlock) resolve
-      rejecter:
-      (RCTPromiseRejectBlock) reject) {
-  if ([RNFBCrashlyticsInitProvider isCrashlyticsCollectionEnabled]) {
-    [[Crashlytics sharedInstance] setUserEmail:userEmail];
+    [[FIRCrashlytics crashlytics] setUserID:userId];
   }
   resolve([NSNull null]);
 }
@@ -162,17 +204,12 @@ RCT_EXPORT_METHOD(setCrashlyticsCollectionEnabled:
 - (void)recordJavaScriptError:(NSDictionary *)jsErrorDict {
   NSString *message = jsErrorDict[@"message"];
   NSDictionary *stackFrames = jsErrorDict[@"frames"];
-  NSMutableArray *customFrames = [[NSMutableArray alloc] init];
+  NSMutableArray *stackTrace = [[NSMutableArray alloc] init];
   BOOL isUnhandledPromiseRejection = [jsErrorDict[@"isUnhandledRejection"] boolValue];
 
   for (NSDictionary *stackFrame in stackFrames) {
-    CLSStackFrame *customFrame = [CLSStackFrame stackFrame];
-    [customFrame setSymbol:stackFrame[@"fn"]];
-    [customFrame setFileName:stackFrame[@"file"]];
-    [customFrame setLibrary:stackFrame[@"src"]];
-    [customFrame setOffset:(uint64_t) [stackFrame[@"col"] intValue]];
-    [customFrame setLineNumber:(uint32_t) [stackFrame[@"line"] intValue]];
-    [customFrames addObject:customFrame];
+    FIRStackFrame *customFrame = [FIRStackFrame stackFrameWithSymbol:stackFrame[@"fn"] file:stackFrame[@"file"] line:(uint32_t) [stackFrame[@"line"] intValue]];
+    [stackTrace addObject:customFrame];
   }
 
   NSString *name = @"JavaScriptError";
@@ -180,8 +217,43 @@ RCT_EXPORT_METHOD(setCrashlyticsCollectionEnabled:
     name = @"UnhandledPromiseRejection";
   }
 
-  [[Crashlytics sharedInstance] recordCustomExceptionName:name reason:message frameArray:customFrames];
+  FIRExceptionModel *exceptionModel = [FIRExceptionModel exceptionModelWithName:name reason:message];
+  exceptionModel.stackTrace = stackTrace;
+  
+  [[FIRCrashlytics crashlytics] recordExceptionModel:exceptionModel];
 }
 
+/**
+ * Check if the debugger is attached
+ *
+ * Taken from https://github.com/plausiblelabs/plcrashreporter/blob/2dd862ce049e6f43feb355308dfc710f3af54c4d/Source/Crash%20Demo/main.m#L96
+ *
+ * @return `YES` if the debugger is attached to the current process, `NO` otherwise
+ */
+- (BOOL)isDebuggerAttached {
+  static BOOL debuggerIsAttached = NO;
+
+  static dispatch_once_t debuggerPredicate;
+  dispatch_once(&debuggerPredicate, ^{
+    struct kinfo_proc info;
+    size_t info_size = sizeof(info);
+    int name[4];
+
+    name[0] = CTL_KERN;
+    name[1] = KERN_PROC;
+    name[2] = KERN_PROC_PID;
+    name[3] = getpid(); // from unistd.h, included by Foundation
+
+    if (sysctl(name, 4, &info, &info_size, NULL, 0) == -1) {
+      ELog(@"Crashlytics ERROR: Checking for a running debugger via sysctl() failed: %s", strerror(errno));
+      debuggerIsAttached = false;
+    }
+
+    if (!debuggerIsAttached && (info.kp_proc.p_flag & P_TRACED) != 0)
+      debuggerIsAttached = true;
+  });
+
+  return debuggerIsAttached;
+}
 
 @end

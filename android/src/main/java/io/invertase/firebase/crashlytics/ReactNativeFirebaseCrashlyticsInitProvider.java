@@ -18,10 +18,7 @@ package io.invertase.firebase.crashlytics;
  */
 
 import android.util.Log;
-import com.crashlytics.android.Crashlytics;
-import com.crashlytics.android.core.CrashlyticsCore;
-import com.crashlytics.android.ndk.CrashlyticsNdk;
-import io.fabric.sdk.android.Fabric;
+import com.google.firebase.crashlytics.FirebaseCrashlytics;
 import io.invertase.firebase.common.ReactNativeFirebaseInitProvider;
 import io.invertase.firebase.common.ReactNativeFirebaseJSON;
 import io.invertase.firebase.common.ReactNativeFirebaseMeta;
@@ -40,53 +37,78 @@ public class ReactNativeFirebaseCrashlyticsInitProvider extends ReactNativeFireb
 
     if (prefs.contains(KEY_CRASHLYTICS_AUTO_COLLECTION_ENABLED)) {
       enabled = prefs.getBooleanValue(KEY_CRASHLYTICS_AUTO_COLLECTION_ENABLED, true);
+      Log.d(TAG, "isCrashlyticsCollectionEnabled via RNFBPreferences: " + enabled);
     } else if (json.contains(KEY_CRASHLYTICS_AUTO_COLLECTION_ENABLED)) {
       enabled = json.getBooleanValue(KEY_CRASHLYTICS_AUTO_COLLECTION_ENABLED, true);
+      Log.d(TAG, "isCrashlyticsCollectionEnabled via RNFBJSON: " + enabled);
     } else {
       enabled = meta.getBooleanValue(KEY_CRASHLYTICS_AUTO_COLLECTION_ENABLED, true);
+      Log.d(TAG, "isCrashlyticsCollectionEnabled via RNFBMeta: " + enabled);
     }
 
+    if (BuildConfig.DEBUG) {
+      if (!json.getBooleanValue(KEY_CRASHLYTICS_DEBUG_ENABLED, false)) {
+        enabled = false;
+      }
+      Log.d(TAG, "isCrashlyticsCollectionEnabled after checking " + KEY_CRASHLYTICS_DEBUG_ENABLED + ": " + enabled);
+    }
+
+    Log.d(TAG, "isCrashlyticsCollectionEnabled final value: " + enabled);
     return enabled;
   }
 
-  @Override
-  public String getEmptyProviderAuthority() {
-    return EMPTY_APPLICATION_ID_PROVIDER_AUTHORITY;
+  static boolean isErrorGenerationOnJSCrashEnabled() {
+    boolean enabled;
+    ReactNativeFirebaseJSON json = ReactNativeFirebaseJSON.getSharedInstance();
+    ReactNativeFirebaseMeta meta = ReactNativeFirebaseMeta.getSharedInstance();
+    ReactNativeFirebasePreferences prefs = ReactNativeFirebasePreferences.getSharedInstance();
+
+    if (prefs.contains(KEY_CRASHLYTICS_IS_ERROR_GENERATION_ON_JS_CRASH_ENABLED)) {
+      enabled = prefs.getBooleanValue(KEY_CRASHLYTICS_IS_ERROR_GENERATION_ON_JS_CRASH_ENABLED, true);
+      Log.d(TAG, "isErrorGenerationOnJSCrashEnabled via RNFBPreferences: " + enabled);
+    } else if (json.contains(KEY_CRASHLYTICS_IS_ERROR_GENERATION_ON_JS_CRASH_ENABLED)) {
+      enabled = json.getBooleanValue(KEY_CRASHLYTICS_IS_ERROR_GENERATION_ON_JS_CRASH_ENABLED, true);
+      Log.d(TAG, "isErrorGenerationOnJSCrashEnabled via RNFBJSON: " + enabled);
+    } else {
+      enabled = meta.getBooleanValue(KEY_CRASHLYTICS_IS_ERROR_GENERATION_ON_JS_CRASH_ENABLED, true);
+      Log.d(TAG, "isErrorGenerationOnJSCrashEnabled via RNFBMeta: " + enabled);
+    }
+
+    Log.d(TAG, "isErrorGenerationOnJSCrashEnabled final value: " + enabled);
+    return enabled;
+  }
+
+  static boolean isCrashlyticsJavascriptExceptionHandlerChainingEnabled() {
+    boolean enabled;
+    ReactNativeFirebaseJSON json = ReactNativeFirebaseJSON.getSharedInstance();
+    ReactNativeFirebaseMeta meta = ReactNativeFirebaseMeta.getSharedInstance();
+    ReactNativeFirebasePreferences prefs = ReactNativeFirebasePreferences.getSharedInstance();
+
+    if (prefs.contains(KEY_CRASHLYTICS_JAVASCRIPT_EXCEPTION_HANDLER_CHAINING_ENABLED)) {
+      enabled = prefs.getBooleanValue(KEY_CRASHLYTICS_JAVASCRIPT_EXCEPTION_HANDLER_CHAINING_ENABLED, true);
+      Log.d(TAG, "isCrashlyticsJavascriptExceptionHandlerChainingEnabled via RNFBPreferences: " + enabled);
+    } else if (json.contains(KEY_CRASHLYTICS_JAVASCRIPT_EXCEPTION_HANDLER_CHAINING_ENABLED)) {
+      enabled = json.getBooleanValue(KEY_CRASHLYTICS_JAVASCRIPT_EXCEPTION_HANDLER_CHAINING_ENABLED, true);
+      Log.d(TAG, "isCrashlyticsJavascriptExceptionHandlerChainingEnabled via RNFBJSON: " + enabled);
+    } else {
+      enabled = meta.getBooleanValue(KEY_CRASHLYTICS_JAVASCRIPT_EXCEPTION_HANDLER_CHAINING_ENABLED, true);
+      Log.d(TAG, "isCrashlyticsJavascriptExceptionHandlerChainingEnabled via RNFBMeta: " + enabled);
+    }
+
+      Log.d(TAG, "isCrashlyticsJavascriptExceptionHandlerChainingEnabled final value: " + enabled);
+    return enabled;
   }
 
   @Override
   public boolean onCreate() {
     super.onCreate();
 
-    if (ReactNativeFirebaseCrashlyticsInitProvider.isCrashlyticsCollectionEnabled() && getContext() != null) {
-      ReactNativeFirebaseJSON json = ReactNativeFirebaseJSON.getSharedInstance();
-      boolean useNdk = json.getBooleanValue(KEY_CRASHLYTICS_NDK_ENABLED, true);
-      boolean debug = json.getBooleanValue(KEY_CRASHLYTICS_DEBUG_ENABLED, false);
-
-      try {
-        Fabric.Builder builder = new Fabric.Builder(getContext());
-
-        Crashlytics crashlyticsCore = new Crashlytics.Builder()
-          .core(new CrashlyticsCore.Builder().disabled(!debug && BuildConfig.DEBUG).build())
-          .build();
-
-        if (useNdk) {
-          builder.kits(crashlyticsCore, new CrashlyticsNdk());
-        } else {
-          builder.kits(crashlyticsCore);
-        }
-
-        builder.debuggable(debug);
-
-        Fabric.with(builder.build());
-
-        Log.i(TAG, "initialization successful");
-      } catch (IllegalStateException exception) {
-        Log.e(TAG, "initialization failed", exception);
-        return false;
-      }
-    } else {
-      Log.i(TAG, "auto collection disabled, skipping initialization");
+    try {
+      FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(ReactNativeFirebaseCrashlyticsInitProvider.isCrashlyticsCollectionEnabled());
+      Log.i(TAG, "initialization successful");
+    } catch (Exception exception) {
+      Log.e(TAG, "initialization failed", exception);
+      return false;
     }
 
     return true;
